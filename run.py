@@ -10,8 +10,8 @@ import os
 
 def setup_logging(log_file):
     """
-    Standardizes log format across the stack. 
-    Outputs to both file (for persistence) and stdout (for container log capture).
+    Configures a dual-stream logger to capture stdout and file persistence.
+    Using a standard ISO-ish format for easier grepping in production logs.
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -23,10 +23,44 @@ def setup_logging(log_file):
         ]
     )
 
+def load_config(config_path):
+    """
+    Parses the YAML orchestration config. 
+    strictly enforces schema presence before 
+    downstream processing starts.
+    """
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+    
+    with open(config_path, 'r') as f:
+        config = yaml.safe_load(f)
+    
+    required_fields = ['seed', 'window', 'version']
+    for field in required_fields:
+        if field not in config:
+            raise KeyError(f"Missing required config field: {field}")
+    return config
+
+def process_data(df, window):
+    """
+    Vectorized signal generation logic.
+    Calculates simple moving average crossover. First (window-1) rows 
+    will result in NaN for rolling_mean, producing a 0 signal by default.
+    """
+    if 'close' not in df.columns:
+        raise ValueError("Missing 'close' column in input CSV")
+    
+    if df.empty:
+        raise ValueError("Input CSV is empty")
+
+    df['rolling_mean'] = df['close'].rolling(window=window).mean()
+    df['signal'] = np.where(df['close'] > df['rolling_mean'], 1, 0)
+    return df
+
 def main():
     """
-    Execution is wrapped in a global try-except to ensure metrics are 
-    emitted even on catastrophic failure (important for downstream monitoring).
+    Handles CLI parsing, orchestration, and ensures a JSON-serializable 
+    metric state is persisted even on failure.
     """
     start_time_ns = time.time_ns()
     
@@ -43,33 +77,17 @@ def main():
 
     version = "unknown"
     try:
-        """
-        Ensures we have the required hyper-parameters before touching the data.
-        If 'version' is missing, we fail early to prevent untracked experimental runs.
-        """
-        if not os.path.exists(args.config):
-            raise FileNotFoundError(f"Config file not found: {args.config}")
-        
-        with open(args.config, 'r') as f:
-            config = yaml.safe_load(f)
-        
-        # Mandatory fields check
-        required_fields = ['seed', 'window', 'version']
-        for field in required_fields:
-            if field not in config:
-                raise KeyError(f"Missing required config field: {field}")
-
+        # Load Config
+        config = load_config(args.config)
         version = config['version']
         seed = config['seed']
         window = config['window']
 
+        # Set Seed
         np.random.seed(seed)
         logging.info(f"Config loaded: seed={seed}, window={window}, version={version}")
 
-        """
-        We validate the 'close' price column exists. We don't perform 
-        outlier detection here; that should happen in the upstream ETL.
-        """
+        # Load Data
         if not os.path.exists(args.input):
             raise FileNotFoundError(f"Input file not found: {args.input}")
         
@@ -77,24 +95,12 @@ def main():
         rows_processed = len(df)
         logging.info(f"Data loaded: {rows_processed} rows")
 
-        if 'close' not in df.columns:
-            raise ValueError("Missing 'close' column in input CSV")
-        
-        if df.empty:
-            raise ValueError("Input CSV is empty")
-
-        """
-        Using a standard rolling SMA. 
-        The first 'window-1' rows will result in NaNs for 'rolling_mean'.
-        This effectively nullifies signal generation for the start of the series.
-        """
-        df['rolling_mean'] = df['close'].rolling(window=window).mean()
+        # Processing Steps
+        df = process_data(df, window)
         logging.info(f"Rolling mean calculated with window={window}")
-        
-
-        df['signal'] = np.where(df['close'] > df['rolling_mean'], 1, 0)
         logging.info("Signals generated")
 
+        # Metrics
         signal_rate = float(df['signal'].mean())
         
         end_time_ns = time.time_ns()
@@ -114,9 +120,8 @@ def main():
         
         with open(args.output, 'w') as f:
             json.dump(metrics, f, indent=4)
-
-        print(json.dumps(metrics, indent=4))
         
+        print(json.dumps(metrics, indent=4))
         logging.info(f"Job completed successfully in {latency_ms}ms")
         sys.exit(0)
 
@@ -135,7 +140,6 @@ def main():
         
         print(json.dumps(error_metrics, indent=4))
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
