@@ -1,0 +1,14 @@
+2026-02-20 02:13:08,961 - INFO - Job started
+2026-02-20 02:13:08,962 - INFO - Loaded config: {'seed': 42, 'window': 5, 'version': 'v1'}
+2026-02-20 02:13:08,965 - INFO - Data ingested: 10 rows
+2026-02-20 02:13:08,966 - INFO - Starting processing steps
+2026-02-20 02:13:08,967 - INFO - Signal generation complete
+2026-02-20 02:13:08,967 - INFO - Metrics summary: {'status': 'success', 'version': 'v1', 'signal_rate': 0.6, 'latency_ms': 7.394829, 'data_points': 10}
+2026-02-20 02:13:08,968 - INFO - Job completed successfully in 7.39ms
+02:21:53 - INFO - Job started
+02:21:53 - INFO - Config loaded: seed=42, window=5, version=v1
+02:21:53 - INFO - Data loaded: 10 rows
+02:21:53 - INFO - Rolling mean calculated with window=5
+02:21:53 - INFO - Signals generated
+02:21:53 - INFO - Metrics: signal_rate=0.6000, rows_processed=10
+02:21:53 - INFO - Job completed successfully in 4ms
